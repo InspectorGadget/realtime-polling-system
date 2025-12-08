@@ -7,3 +7,10 @@ This project is a Realtime Polling System that allows users to create and partic
 ## Tools needed
 1. Docker
 2. Docker Compose
+
+## Technologies Used
+- Frontend: JavaScript
+- Backend: Go
+- Database: PostgreSQL
+- Real-time Communication: WebSockets (wss)
+- Pub/Sub Messaging: Redis
