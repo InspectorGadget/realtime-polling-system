@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Go Real-time Poll POC</title>
+    <style>
+      /* --- Basic CSS Styling --- */
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        background-color: #f4f4f9;
+        display: flex;
+        justify-content: center;
+        padding-top: 50px;
+        margin: 0;
+      }
+
+      .poll-container {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        width: 400px;
+        max-width: 90%;
+        text-align: center;
+      }
+
+      h1 {
+        color: #333;
+        margin-bottom: 1.5rem;
+        font-size: 1.5rem;
+      }
+
+      /* Status bar for connection state */
+      #status {
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        padding: 5px;
+        border-radius: 4px;
+      }
+      .status-connecting {
+        background: #e2e3e5;
+        color: #383d41;
+      }
+      .status-live {
+        background: #d4edda;
+        color: #155724;
+      }
+      .status-error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      /* Option Buttons */
+      .option-btn {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        padding: 15px 20px;
+        margin-bottom: 10px;
+        border: 2px solid #e0e0e0;
+        border-radius: 6px;
+        background: white;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: all 0.2s ease;
+      }
+
+      .option-btn:hover {
+        border-color: #007bff;
+        background-color: #f8faff;
+      }
+
+      .option-btn:active {
+        transform: scale(0.98);
+      }
+
+      .opt-text {
+        font-weight: 500;
+      }
+
+      .opt-votes {
+        background-color: #e9ecef;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="poll-container">
+      <div id="status" class="status-connecting">Connecting...</div>
+
+      <h1 id="poll-topic">Loading Topic...</h1>
+
+      <div id="options-list"></div>
+    </div>
+
+    <script>
+      // --- Configuration ---
+      // CHANGE THIS IF YOUR POLL ID IS DIFFERENT
+      const POLL_ID = 1;
+      const BACKEND_HTTP = "http://localhost:8080";
+      // ws://localhost:8080/ws/1
+      const BACKEND_WS = BACKEND_HTTP.replace("http", "ws") + `/ws/${POLL_ID}`;
+
+      const statusEl = document.getElementById("status");
+
+      // --- 1. Initialization ---
+      async function init() {
+        try {
+          // Fetch initial data via standard HTTP GET first
+          statusEl.textContent = "Fetching initial data...";
+          const response = await fetch(`${BACKEND_HTTP}/polls/${POLL_ID}`);
+
+          if (!response.ok)
+            throw new Error("Poll not found (Did you create poll ID 1?)");
+
+          const data = await response.json();
+          renderPoll(data);
+
+          // After initial load, connect the Websocket for updates
+          connectWebsocket();
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      // --- 2. Rendering Logic ---
+      // Takes the full poll JSON structure and redraws the UI
+      function renderPoll(pollData) {
+        document.getElementById("poll-topic").innerText = pollData.topic;
+        const listContainer = document.getElementById("options-list");
+
+        // Clear current list
+        listContainer.innerHTML = "";
+
+        // Sort options by ID to ensure consistent order, or votes if you prefer
+        // pollData.options.sort((a, b) => a.id - b.id);
+
+        pollData.options.forEach((option) => {
+          const btn = document.createElement("button");
+          btn.className = "option-btn";
+          // The click handler calls the castVote function
+          btn.onclick = () => castVote(option.id);
+
+          btn.innerHTML = `
+                <span class="opt-text">${option.text}</span>
+                <span class="opt-votes">${option.votes} votes</span>
+            `;
+          listContainer.appendChild(btn);
+        });
+      }
+
+      // --- 3. Voting Action (HTTP POST) ---
+      async function castVote(optionId) {
+        try {
+          // We send the vote via standard HTTP.
+          // We DO NOT manually fetch results afterwards. The Websocket will tell us when to update.
+          await fetch(`${BACKEND_HTTP}/vote`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              poll_id: POLL_ID,
+              option_id: optionId,
+            }),
+          });
+          console.log("Vote submitted for option", optionId);
+        } catch (e) {
+          console.error("Voting failed", e);
+          showError("Failed to cast vote");
+        }
+      }
+
+      // --- 4. Websocket Connection (Real-time receiving) ---
+      function connectWebsocket() {
+        statusEl.textContent = "Connecting to WebSocket...";
+        const socket = new WebSocket(BACKEND_WS);
+
+        socket.onopen = () => {
+          statusEl.textContent = "• Live Connection Active";
+          statusEl.className = "status-live";
+          console.log("Websocket connected");
+        };
+
+        socket.onmessage = (event) => {
+          // The backend pushes the entire updated poll JSON structure
+          const updatedPollData = JSON.parse(event.data);
+          console.log("Real-time update received via WS", updatedPollData);
+          // Re-render the UI with the new data
+          renderPoll(updatedPollData);
+
+          // Optional: Flash effect on update
+          document.querySelector(".poll-container").style.backgroundColor =
+            "#e8f4ff";
+          setTimeout(() => {
+            document.querySelector(".poll-container").style.backgroundColor =
+              "white";
+          }, 300);
+        };
+
+        socket.onclose = () => {
+          statusEl.textContent = "Connection Lost. Refresh page.";
+          statusEl.className = "status-error";
+        };
+
+        socket.onerror = (err) => {
+          console.error("WS Error", err);
+          showError("Websocket connection error");
+        };
+      }
+
+      function showError(msg) {
+        statusEl.textContent = "Error: " + msg;
+        statusEl.className = "status-error";
+      }
+
+      // Start the app
+      init();
+    </script>
+  </body>
+</html>

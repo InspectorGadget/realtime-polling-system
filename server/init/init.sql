@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS polls (
+    id SERIAL PRIMARY KEY,
+    topic VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS options (
+    id SERIAL PRIMARY KEY,
+    poll_id INT REFERENCES polls(id),
+    text VARCHAR(255) NOT NULL,
+    votes INT DEFAULT 0
+);

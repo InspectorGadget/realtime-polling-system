@@ -1,0 +1,7 @@
+POST http://localhost:8080/polls
+Content-Type: application/json
+
+{
+    "topic": "Best Programming Language?",
+    "options": ["Go", "Rust", "Python", "TypeScript"]
+}
