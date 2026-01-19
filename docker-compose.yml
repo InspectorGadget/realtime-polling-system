@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: database
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: polling_db
+    ports:
+      - "5432:5432"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -D polling_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/init/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+    networks:
+      - internal
+
+  # Go Backend
+  backend:
+    build:
+      context: ./server
+    container_name: backend
+    environment:
+      DB_USER: "user"
+      DB_PASSWORD: "password"
+      DB_HOST: "db"
+      DB_PORT: 5432
+      DB_NAME: "polling_db"
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - internal
+
+  frontend:
+    image: nginx:alpine
+    container_name: frontend
+    volumes:
+      - ./client:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
